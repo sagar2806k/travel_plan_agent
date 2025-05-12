@@ -6,7 +6,6 @@ from agno.agent import Agent
 from agno.tools.serpapi import SerpApiTools
 from agno.models.google import Gemini
 from datetime import datetime, timedelta
-import re
 
 # API Keys
 SERPAPI_KEY = "404a65fa26765c2d5e65d39afa2a809efc09d1bc09dca8fb560e0524a1ed0559"
@@ -106,129 +105,26 @@ def display_flight_info(flight):
     """
     return flight_info
 
-def extract_airport_code(text):
-    # Look for common airport code patterns (3 uppercase letters in parentheses)
-    pattern = r'\(([A-Z]{3})\)'
-    match = re.search(pattern, text)
-    if match:
-        return match.group(1)
-    return None
-
-def extract_date(text, reference_date=None):
-    if not reference_date:
-        reference_date = datetime.now()
-    
-    # Try to identify dates in various formats
-    patterns = [
-        # DD/MM/YYYY or MM/DD/YYYY
-        r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})',
-        # Month name formats
-        r'(\d{1,2})\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})',
-        # Relative dates
-        r'(today|tomorrow|next week|next month)'
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            if match.group(1).lower() == 'today':
-                return reference_date.strftime('%Y-%m-%d')
-            elif match.group(1).lower() == 'tomorrow':
-                return (reference_date + timedelta(days=1)).strftime('%Y-%m-%d')
-            elif 'next week' in match.group(1).lower():
-                return (reference_date + timedelta(weeks=1)).strftime('%Y-%m-%d')
-            elif 'next month' in match.group(1).lower():
-                # Simple approximation for next month
-                new_month = reference_date.month + 1
-                new_year = reference_date.year
-                if new_month > 12:
-                    new_month = 1
-                    new_year += 1
-                return datetime(new_year, new_month, reference_date.day).strftime('%Y-%m-%d')
-            else:
-                # Format properly based on the matched pattern
-                try:
-                    if len(match.groups()) == 3:
-                        if match.group(3).isdigit() and len(match.group(3)) == 4:  # Full year format
-                            # Determine if it's DD/MM or MM/DD based on values
-                            day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
-                            if month > 12:  # Must be DD/MM format
-                                day, month = month, day
-                            return f"{year}-{month:02d}-{day:02d}"
-                except:
-                    pass
-    
-    # Default to a week from now if no date found
-    return (reference_date + timedelta(days=7)).strftime('%Y-%m-%d')
-
-def extract_duration_days(text):
-    # Look for patterns like "3 days", "5-day trip", etc.
-    patterns = [
-        r'(\d+)\s*days',
-        r'(\d+)[-\s]day',
-        r'for\s+(\d+)\s+days',
-        r'stay(?:ing)?\s+for\s+(\d+)\s+days'
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-    
-    # Default duration if not found
-    return 5
-
-def extract_travel_theme(text):
-    themes = {
-        "couple": "💑 Couple Getaway",
-        "romantic": "💑 Couple Getaway",
-        "honeymoon": "💑 Couple Getaway",
-        "family": "👨‍👩‍👧‍👦 Family Vacation",
-        "kids": "👨‍👩‍👧‍👦 Family Vacation",
-        "adventure": "🏔️ Adventure Trip",
-        "hiking": "🏔️ Adventure Trip",
-        "trekking": "🏔️ Adventure Trip",
-        "solo": "🧳 Solo Exploration",
-        "backpacking": "🧳 Solo Exploration"
-    }
-    
-    text_lower = text.lower()
-    for keyword, theme in themes.items():
-        if keyword in text_lower:
-            return theme
-    
-    # Default theme
-    return "🧳 Solo Exploration"
-
-def extract_budget_preference(text):
-    text_lower = text.lower()
-    if any(word in text_lower for word in ["luxury", "expensive", "high end", "premium", "5 star"]):
-        return "Luxury"
-    elif any(word in text_lower for word in ["cheap", "budget", "affordable", "economical", "inexpensive"]):
-        return "Economy"
-    else:
-        return "Standard"
-
-def extract_activities(text):
-    activities = []
-    activity_keywords = [
-        "beach", "hiking", "trekking", "shopping", "food", "cuisine", "history", 
-        "museum", "adventure", "relax", "nightlife", "party", "culture", "sightseeing",
-        "photography", "wildlife", "nature", "temple", "church", "architecture"
-    ]
-    
-    text_lower = text.lower()
-    for activity in activity_keywords:
-        if activity in text_lower:
-            activities.append(activity)
-    
-    if not activities:
-        activities = ["sightseeing", "relaxing", "local cuisine"]
-    
-    return ", ".join(activities)
-
 # Initialize AI Agents
 def setup_ai_agents():
+    # Entity extraction agent specifically for understanding travel details from natural language
+    entity_extractor = Agent(
+        name="EntityExtractor",
+        instructions=[
+            "You are an expert at extracting travel-related information from natural language text.",
+            "Extract only the specified entity type when requested.",
+            "Provide clean, direct responses without explanations.",
+            "If information is not found, respond with 'None' only.",
+            "For airport codes, return the standard 3-letter IATA code in uppercase.",
+            "For dates, return in YYYY-MM-DD format.",
+            "For budget levels, categorize as 'Economy', 'Standard', or 'Luxury'.",
+            "For travel themes, categorize as 'Family Vacation', 'Couple Getaway', 'Adventure Trip', or 'Solo Exploration'.",
+            "For activities, return a comma-separated list of activities mentioned."
+        ],
+        model=Gemini(id="gemini-2.0-flash-exp"),
+        add_datetime_to_instructions=True,
+    )
+
     researcher = Agent(
         name="Researcher",
         instructions=[
@@ -274,12 +170,115 @@ def setup_ai_agents():
         add_datetime_to_instructions=True,
     )
     
-    return researcher, planner, hotel_restaurant_finder
+    return entity_extractor, researcher, planner, hotel_restaurant_finder
+
+# LLM-based entity extraction functions
+def extract_airport_code(text, entity_extractor):
+    prompt = f"""
+    Extract the airport code from the following text: "{text}"
+    
+    If an explicit airport code is mentioned (like 'DEL', 'BOM', 'JFK'), return that.
+    If a city name is mentioned (like 'Delhi', 'Mumbai', 'New York'), return the most common airport code for that city.
+    Only return the 3-letter IATA airport code in uppercase, nothing else.
+    If no airport or city is mentioned, return None.
+    """
+    response = entity_extractor.run(prompt, stream=False)
+    result = response.content.strip()
+    
+    # Validate the result - should be a 3-letter code
+    if result and result != "None" and len(result) == 3 and result.isalpha():
+        return result.upper()
+    return None
+
+def extract_travel_dates(text, entity_extractor):
+    prompt = f"""
+    Extract the departure date and return date from the following text: "{text}"
+    
+    Format the dates as YYYY-MM-DD.
+    If only one date is mentioned, assume it's the departure date.
+    If no dates are mentioned, return "None" for both.
+    Return in this format: departure_date, return_date
+    """
+    response = entity_extractor.run(prompt, stream=False)
+    result = response.content.strip()
+    
+    try:
+        departure_date, return_date = result.split(",")
+        departure_date = departure_date.strip()
+        return_date = return_date.strip()
+        
+        # Validate dates
+        if departure_date == "None":
+            # Default to a week from now
+            departure_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        if return_date == "None":
+            # Default to two weeks from now
+            return_date = (datetime.now() + timedelta(days=14)).strftime('%Y-%m-%d')
+            
+        return departure_date, return_date
+    except:
+        # Default dates if extraction fails
+        departure_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        return_date = (datetime.now() + timedelta(days=14)).strftime('%Y-%m-%d')
+        return departure_date, return_date
+
+def extract_travel_theme(text, entity_extractor):
+    prompt = f"""
+    Extract the travel theme or style from the following text: "{text}"
+    
+    Categorize into exactly one of these categories:
+    - Family Vacation
+    - Couple Getaway
+    - Adventure Trip
+    - Solo Exploration
+    
+    Return only the category name, nothing else.
+    """
+    response = entity_extractor.run(prompt, stream=False)
+    result = response.content.strip()
+    
+    # Add emoji to the theme
+    theme_emojis = {
+        "Family Vacation": "👨‍👩‍👧‍👦 Family Vacation",
+        "Couple Getaway": "💑 Couple Getaway",
+        "Adventure Trip": "🏔️ Adventure Trip",
+        "Solo Exploration": "🧳 Solo Exploration"
+    }
+    
+    return theme_emojis.get(result, "🧳 Solo Exploration")
+
+def extract_budget_preference(text, entity_extractor):
+    prompt = f"""
+    Extract the budget preference from the following text: "{text}"
+    
+    Categorize into exactly one of these categories:
+    - Economy (budget-friendly, cheap, affordable)
+    - Standard (moderate, mid-range)
+    - Luxury (high-end, premium, expensive)
+    
+    Return only the category name (Economy, Standard, or Luxury), nothing else.
+    """
+    response = entity_extractor.run(prompt, stream=False)
+    return response.content.strip()
+
+def extract_activities(text, entity_extractor):
+    prompt = f"""
+    Extract the activities or interests mentioned in the following text: "{text}"
+    
+    Return a comma-separated list of activities.
+    Common travel activities include: beach, hiking, trekking, shopping, food/cuisine, history, 
+    museums, adventure, relaxation, nightlife, culture, sightseeing, photography, wildlife, 
+    nature, temples, architecture, etc.
+    
+    If no specific activities are mentioned, return "sightseeing, local cuisine, relaxation"
+    """
+    response = entity_extractor.run(prompt, stream=False)
+    return response.content.strip()
 
 # Initialize session state variables
 if 'messages' not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "AI Travel Assistant. Hi! I'm your AI Travel Assistant. Tell me where you'd like to travel, and I'll help plan your trip.)"}
+        {"role": "assistant", "content": "Hi! I'm your AI Travel Assistant. Tell me where you'd like to travel, and I'll help plan your trip."}
     ]
 
 if 'travel_info' not in st.session_state:
@@ -312,74 +311,71 @@ def process_user_message():
     # Get the required information based on the collection stage
     info = st.session_state.travel_info
     collection_stage = info['collection_stage']
+    entity_extractor, _, _, _ = st.session_state.agents
     
     if collection_stage == 'initial':
         # Try to extract destination from initial message
-        destination = extract_airport_code(user_message)
+        destination = extract_airport_code(user_message, entity_extractor)
         if destination:
             info['destination'] = destination
             info['collection_stage'] = 'source'
-            response = f"Great! I see you want to visit {destination}. Where will you be traveling from? (Please mention the departure city or airport code)"
+            response = f"Great! I see you want to visit {destination}. Where will you be traveling from? (Please mention the departure city or airport)"
         else:
-            response = "Where would you like to go? Please mention the destination city or airport code"
+            response = "Where would you like to go? Please mention the destination city or airport"
             info['collection_stage'] = 'destination'
     
     elif collection_stage == 'destination':
-        destination = extract_airport_code(user_message) or user_message.strip().upper()
-        if len(destination) == 3 and destination.isalpha():
+        destination = extract_airport_code(user_message, entity_extractor)
+        if destination:
             info['destination'] = destination
             info['collection_stage'] = 'source'
             response = f"Your destination is {destination}. Where will you be traveling from?"
         else:
-            response = "Please provide a valid airport code (e.g., DEL for Delhi, BOM for Mumbai)"
+            response = "I couldn't identify a valid destination. Please mention a city or airport code clearly (e.g., 'Delhi' or 'DEL')"
     
     elif collection_stage == 'source':
-        source = extract_airport_code(user_message) or user_message.strip().upper()
-        if len(source) == 3 and source.isalpha():
+        source = extract_airport_code(user_message, entity_extractor)
+        if source:
             info['source'] = source
             info['collection_stage'] = 'dates'
             response = f"Your departure city is {source}. When would you like to travel? Please mention departure and return dates."
         else:
-            response = "Please provide a valid airport code (e.g., DEL for Delhi, BOM for Mumbai)"
+            response = "I couldn't identify a valid source location. Please mention a city or airport code clearly (e.g., 'Delhi' or 'DEL')"
     
     elif collection_stage == 'dates':
-        # Try to extract two dates
-        dates = re.findall(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', user_message)
-        today = datetime.now()
+        # Try to extract two dates using LLM
+        departure_date, return_date = extract_travel_dates(user_message, entity_extractor)
         
-        if len(dates) >= 2:
-            info['departure_date'] = extract_date(dates[0], today)
-            info['return_date'] = extract_date(dates[1], today)
-        else:
-            # If explicit dates not found, extract what we can
-            info['departure_date'] = extract_date(user_message, today)
-            # Set return date as departure + 7 days by default
-            departure_dt = datetime.strptime(info['departure_date'], '%Y-%m-%d')
-            info['return_date'] = (departure_dt + timedelta(days=7)).strftime('%Y-%m-%d')
+        info['departure_date'] = departure_date
+        info['return_date'] = return_date
         
         # Calculate duration
-        d1 = datetime.strptime(info['departure_date'], '%Y-%m-%d')
-        d2 = datetime.strptime(info['return_date'], '%Y-%m-%d')
-        info['num_days'] = (d2 - d1).days
+        try:
+            d1 = datetime.strptime(info['departure_date'], '%Y-%m-%d')
+            d2 = datetime.strptime(info['return_date'], '%Y-%m-%d')
+            info['num_days'] = (d2 - d1).days
+        except:
+            # Fallback if date parsing fails
+            info['num_days'] = 7
         
         info['collection_stage'] = 'duration'
         response = f"Your trip is from {info['departure_date']} to {info['return_date']}. That's a {info['num_days']}-day trip. Is this correct? If yes, please tell me about your travel style (e.g., family, couple, adventure, or solo)"
     
     elif collection_stage == 'duration':
-        # Extract travel theme
-        info['travel_theme'] = extract_travel_theme(user_message)
+        # Extract travel theme using LLM
+        info['travel_theme'] = extract_travel_theme(user_message, entity_extractor)
         info['collection_stage'] = 'theme'
         response = f"Your travel style: {info['travel_theme']}. Now tell me your budget preference (economy, standard, or luxury)"
     
     elif collection_stage == 'theme':
-        # Extract budget
-        info['budget'] = extract_budget_preference(user_message)
+        # Extract budget using LLM
+        info['budget'] = extract_budget_preference(user_message, entity_extractor)
         info['collection_stage'] = 'budget'
         response = f"Your budget: {info['budget']}. Finally, what kind of activities are you interested in?"
     
     elif collection_stage == 'budget':
-        # Extract activities
-        info['activities'] = extract_activities(user_message)
+        # Extract activities using LLM
+        info['activities'] = extract_activities(user_message, entity_extractor)
         info['collection_stage'] = 'generate_plan'
         response = "Thank you! I'm now generating your travel plan. Please wait..."
         
@@ -399,7 +395,7 @@ def process_user_message():
 def generate_travel_plan():
     # Extract all collected information
     info = st.session_state.travel_info
-    researcher, planner, hotel_restaurant_finder = st.session_state.agents
+    _, researcher, planner, hotel_restaurant_finder = st.session_state.agents
     
     with st.spinner("🔍 Researching best attractions & activities..."):
         research_prompt = (
