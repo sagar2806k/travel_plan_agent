@@ -6,11 +6,14 @@ from agno.agent import Agent
 from agno.tools.serpapi import SerpApiTools
 from agno.models.google import Gemini
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
+
+load_dotenv()
 # API Keys
-SERPAPI_KEY = "404a65fa26765c2d5e65d39afa2a809efc09d1bc09dca8fb560e0524a1ed0559"
-GOOGLE_API_KEY = "AIzaSyDn3KImU6z28oSqERLS7KjzmQBgP60nh4g"
-os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+# os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
 # Configure page
 st.set_page_config(page_title="🌍 Travel Chatbot", layout="wide")
