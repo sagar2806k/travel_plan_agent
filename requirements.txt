@@ -3,3 +3,4 @@ python-dotenv
 serpapi
 agno
 google-search-results
+google-genai
