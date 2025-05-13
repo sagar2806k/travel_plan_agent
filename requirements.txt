@@ -2,3 +2,4 @@ streamlit
 python-dotenv
 serpapi
 agno
+google-search-results
